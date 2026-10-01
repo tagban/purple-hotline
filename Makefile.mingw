@@ -3,7 +3,7 @@
 # Pidgin 2.14 for Windows is a 32-bit program, so this builds 32-bit (i686) with
 # MinGW-w64, either in MSYS2's MINGW32 shell or as a cross compiler elsewhere:
 #
-#   make -f Makefile.mingw PIDGIN_TREE_TOP=pidgin WIN32_DEV_TOP=win32-dev
+#   make -f Makefile.mingw PIDGIN_TREE_TOP=pidgin-src WIN32_DEV_TOP=win32-dev
 #
 # PIDGIN_TREE_TOP  Pidgin's source (libpurple's headers, libpurple/win32), with Pidgin's
 #                  own libpurple.dll copied into its libpurple/ folder
@@ -14,7 +14,7 @@
 # pidgin\pixmaps\ into Pidgin's own pixmaps\pidgin\protocols\ (the release zip is laid out that way).
 
 CC ?= i686-w64-mingw32-gcc
-PIDGIN_TREE_TOP ?= pidgin
+PIDGIN_TREE_TOP ?= pidgin-src
 WIN32_DEV_TOP ?= win32-dev
 GTK_TOP ?= $(WIN32_DEV_TOP)/glib-2.28.8
 PURPLE_DLL_DIR ?= $(PIDGIN_TREE_TOP)/libpurple

@@ -38,17 +38,17 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            pidgin
+            pidgin-src
             win32-dev
-          key: pidgin-2.14.1-glib-2.28.8
+          key: pidgin-src-2.14.1-glib-2.28.8
       - name: Download Pidgin and glib for Windows
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
           curl --http1.1 -fL https://sourceforge.net/projects/pidgin/files/Pidgin/2.14.1/pidgin-2.14.1.tar.bz2/download -o pidgin.tar.bz2
-          tar -xf pidgin.tar.bz2 && mv pidgin-2.14.1 pidgin
+          tar -xf pidgin.tar.bz2 && mv pidgin-2.14.1 pidgin-src
           curl --http1.1 -fL https://sourceforge.net/projects/pidgin/files/Pidgin/2.14.1/pidgin-2.14.1-win32-bin.zip/download -o pidgin-win32bin.zip
           unzip -q pidgin-win32bin.zip
-          cp pidgin-2.14.1-win32bin/libpurple.dll pidgin/libpurple/
+          cp pidgin-2.14.1-win32bin/libpurple.dll pidgin-src/libpurple/
           mkdir -p win32-dev
           for z in glib/2.28/glib-dev_2.28.8-1_win32.zip dependencies/gettext-runtime-dev_0.18.1.1-2_win32.zip dependencies/zlib-dev_1.2.5-2_win32.zip; do
             curl --http1.1 -fL "http://ftp.gnome.org/pub/gnome/binaries/win32/$z" -o dep.zip
