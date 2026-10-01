@@ -1141,7 +1141,7 @@ static void hl_dispatch(HlConn *hc, HlTxn *t)
 		time_t when = time(NULL);
 		PurpleMessageFlags flags = PURPLE_MESSAGE_RECV;
 		if (guid && !blank(from)) {
-			char *html = purple_markup_escape_text(body ? body : "", -1);
+			char *html = g_markup_escape_text(body ? body : "", -1);   /* purple_markup_escape_text is 2.6+ */
 			char *br = purple_strdup_withhtml(html);
 			ack(hc, guid, from, 1);   /* delivered */
 			if (hl_txn_uint(t, HL_F_MESSAGE_TIMESTAMP, &ts) && ts > 0) {
