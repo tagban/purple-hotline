@@ -5,6 +5,7 @@
 #import "HotlineService.h"
 #import "HotlineAccount.h"
 #import "HotlineAccountViewController.h"
+#import "HotlineJoinChatViewController.h"
 #import <Adium/AIAccountViewController.h>
 #import <Adium/AIStatusControllerProtocol.h>
 #import <Adium/AISharedAdium.h>
@@ -24,7 +25,7 @@
 
 - (DCJoinChatViewController *)joinChatView
 {
-	return nil;
+	return [HotlineJoinChatViewController joinChatView];
 }
 
 - (NSString *)serviceCodeUniqueID { return @"prpl-hotline"; }
@@ -38,7 +39,7 @@
 - (BOOL)supportsProxySettings { return YES; }
 - (BOOL)supportsPassword { return YES; }
 - (BOOL)requiresPassword { return YES; }
-- (BOOL)canCreateGroupChats { return NO; }
+- (BOOL)canCreateGroupChats { return YES; }
 - (BOOL)caseSensitive { return NO; }
 - (AIServiceImportance)serviceImportance { return AIServiceSecondary; }
 

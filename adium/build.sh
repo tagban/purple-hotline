@@ -37,7 +37,7 @@ WARN="-Wall -Wno-#pragma-messages -Wno-unused-parameter -Wno-deprecated-declarat
 for c in ../src/hotline.c ../src/hl_wire.c ../src/hl_crypto.c ../src/hl_json.c ../src/hl_tracker.c ../src/hl_room.c; do
 	cc $COMMON $WARN -c "$c" -o "build/obj/$(basename "$c" .c).o"
 done
-for m in HotlinePlugin.m HotlineService.m HotlineAccount.m HotlineAccountViewController.m; do
+for m in HotlinePlugin.m HotlineService.m HotlineAccount.m HotlineAccountViewController.m HotlineJoinChatViewController.m; do
 	cc $COMMON -fno-objc-arc -include Cocoa/Cocoa.h -Wno-everything -c "$m" -o "build/obj/$(basename "$m" .m).o"
 done
 
