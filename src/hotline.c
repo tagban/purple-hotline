@@ -46,7 +46,10 @@
 #include "version.h"
 
 #include "hl_crypto.h"
+#include "hl_room.h"
+#include "hl_tracker.h"
 #include "hl_wire.h"
+#include "roomlist.h"
 
 #define HL_PRPL_ID "prpl-hotline"
 #define HL_VERSION "0.1.0"
@@ -109,6 +112,10 @@ struct _HlConn {
 	GHashTable *roster;      /* logins on the server's list (for tidying the local one) */
 
 	gboolean dead;           /* an error was reported; libpurple signs off shortly */
+	GHashTable *rooms;       /* chat ID -> HlRoom (each its own connection) */
+	int next_chat;
+	PurpleRoomlist *roomlist;
+	GPtrArray *listed;       /* the servers behind the open room list */
 	gboolean utf8;
 	guint32 max_message;
 	gboolean icons;
@@ -1263,6 +1270,8 @@ static void hl_login(PurpleAccount *account)
 	hc->pending = g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, pending_free);
 	hc->asked = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
 	hc->roster = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+	hc->rooms = g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, (GDestroyNotify)hl_room_leave);
+	hc->next_chat = 1;
 	hc->utf8 = TRUE;
 	hc->max_message = 4096;
 	gc->proto_data = hc;
@@ -1286,6 +1295,12 @@ static void hl_close(PurpleConnection *gc)
 	g_hash_table_destroy(hc->pending);
 	g_hash_table_destroy(hc->asked);
 	g_hash_table_destroy(hc->roster);
+	g_hash_table_destroy(hc->rooms);   /* leaves every room */
+	if (hc->roomlist) {
+		purple_roomlist_set_in_progress(hc->roomlist, FALSE);
+		purple_roomlist_unref(hc->roomlist);
+	}
+	hl_servers_free(hc->listed);
 	g_free(hc);
 	gc->proto_data = NULL;
 }
@@ -1536,6 +1551,192 @@ static gboolean hl_offline_message(const PurpleBuddy *buddy)
 	return TRUE;   /* the server holds IMs for buddies who are away (guide §13) */
 }
 
+/* ------------------------------------------------------------------ chat rooms */
+
+/* Join Chat asks for a server's address (Pidgin's dialog; Adium has its own picker). */
+static GList *hl_chat_info(PurpleConnection *gc)
+{
+	struct proto_chat_entry *e = g_new0(struct proto_chat_entry, 1);
+	e->label = "Server address:";
+	e->identifier = "server";
+	e->required = TRUE;
+	return g_list_append(NULL, e);
+}
+
+static GHashTable *hl_chat_info_defaults(PurpleConnection *gc, const char *chat_name)
+{
+	GHashTable *h = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, g_free);
+	if (chat_name)
+		g_hash_table_insert(h, "server", g_strdup(chat_name));
+	return h;
+}
+
+static char *hl_get_chat_name(GHashTable *components)
+{
+	const char *server = (const char *)g_hash_table_lookup(components, "server");
+	return g_strdup(server ? server : "");
+}
+
+/* The name you go by in rooms: the account's alias, else the screen name. */
+static const char *room_nick(HlConn *hc)
+{
+	const char *alias = purple_account_get_alias(hc->account);
+	return blank(alias) ? purple_account_get_username(hc->account) : alias;
+}
+
+static void hl_join_chat(PurpleConnection *gc, GHashTable *components)
+{
+	HlConn *hc = (HlConn *)gc->proto_data;
+	const char *server = (const char *)g_hash_table_lookup(components, "server");
+	const char *title = (const char *)g_hash_table_lookup(components, "name");
+	char *host = NULL, *address;
+	int port, id;
+	PurpleConversation *conv;
+
+	if (!server)
+		server = title;
+	if (!hc || !hl_parse_address(server, &host, &port)) {
+		purple_notify_error(gc, "Hotline", "Which server?", "Enter a Hotline server's address, like hotline.example.com:5500.");
+		return;
+	}
+	address = port == 5500 ? g_strdup(host) : g_strdup_printf("%s:%d", host, port);
+	/* Already in it: just show it. */
+	conv = purple_find_conversation_with_account(PURPLE_CONV_TYPE_CHAT, address, hc->account);
+	if (conv && !purple_conv_chat_has_left(PURPLE_CONV_CHAT(conv))) {
+		purple_conversation_present(conv);
+		g_free(host);
+		g_free(address);
+		return;
+	}
+	id = hc->next_chat++;
+	conv = serv_got_joined_chat(gc, id, address);
+	if (conv && !blank(title) && strcmp(title, server) != 0)
+		purple_conversation_set_title(conv, title);
+	g_hash_table_insert(hc->rooms, GINT_TO_POINTER(id), hl_room_join(gc, id, host, port, room_nick(hc)));
+	g_free(host);
+	g_free(address);
+}
+
+static void hl_chat_leave(PurpleConnection *gc, int id)
+{
+	HlConn *hc = (HlConn *)gc->proto_data;
+	if (hc)
+		g_hash_table_remove(hc->rooms, GINT_TO_POINTER(id));
+}
+
+static int hl_chat_send(PurpleConnection *gc, int id, const char *message, PurpleMessageFlags flags)
+{
+	HlConn *hc = (HlConn *)gc->proto_data;
+	HlRoom *room = hc ? (HlRoom *)g_hash_table_lookup(hc->rooms, GINT_TO_POINTER(id)) : NULL;
+	char *text;
+	if (!room)
+		return -EINVAL;
+	text = purple_markup_strip_html(message);
+	hl_room_send(room, text);   /* the server echoes it back, and that's what's shown */
+	g_free(text);
+	return 0;
+}
+
+/* ---- Room List: the tracker's servers. Busy ones first; the quiet and the hidden
+ * (file mirrors, welcome servers) are a click away in their own sections. ---- */
+
+#define QUIET_LABEL "No one there right now"
+#define HIDDEN_LABEL "Hidden: file mirrors and welcome servers"
+
+static void add_server_row(PurpleRoomlist *list, HlServer *s, PurpleRoomlistRoom *parent)
+{
+	PurpleRoomlistRoom *room = purple_roomlist_room_new(PURPLE_ROOMLIST_ROOMTYPE_ROOM, s->name, parent);
+	char *address = hl_server_address(s);
+	purple_roomlist_room_add_field(list, room, GINT_TO_POINTER(s->users < 0 ? 0 : s->users));
+	purple_roomlist_room_add_field(list, room, s->description);
+	purple_roomlist_room_add_field(list, room, address);
+	purple_roomlist_room_add(list, room);
+	g_free(address);
+}
+
+static void got_rooms(GPtrArray *servers, const char *error, gpointer data)
+{
+	PurpleAccount *account = (PurpleAccount *)data;
+	HlConn *hc = conn_of(account);
+	PurpleRoomlist *list;
+	guint i, quiet = 0, hidden = 0;
+
+	if (!hc || !hc->roomlist)
+		return;
+	list = hc->roomlist;
+	if (!servers) {
+		purple_notify_error(hc->gc, "Hotline", "The list of servers didn't load.", error);
+		purple_roomlist_set_in_progress(list, FALSE);
+		return;
+	}
+	hl_servers_free(hc->listed);
+	hc->listed = g_ptr_array_new();
+	for (i = 0; i < servers->len; i++) {
+		HlServer *s = (HlServer *)g_ptr_array_index(servers, i), *copy = g_new0(HlServer, 1);
+		*copy = *s;
+		copy->host = g_strdup(s->host);
+		copy->name = g_strdup(s->name);
+		copy->description = g_strdup(s->description);
+		g_ptr_array_add(hc->listed, copy);
+		if (s->kind == HL_SERVER_BUSY)
+			add_server_row(list, s, NULL);
+		else if (s->kind == HL_SERVER_QUIET)
+			quiet++;
+		else
+			hidden++;
+	}
+	if (quiet)
+		purple_roomlist_room_add(list, purple_roomlist_room_new(PURPLE_ROOMLIST_ROOMTYPE_CATEGORY, QUIET_LABEL, NULL));
+	if (hidden)
+		purple_roomlist_room_add(list, purple_roomlist_room_new(PURPLE_ROOMLIST_ROOMTYPE_CATEGORY, HIDDEN_LABEL, NULL));
+	purple_roomlist_set_in_progress(list, FALSE);
+}
+
+static PurpleRoomlist *hl_roomlist_get_list(PurpleConnection *gc)
+{
+	HlConn *hc = (HlConn *)gc->proto_data;
+	GList *fields = NULL;
+	if (hc->roomlist) {
+		purple_roomlist_set_in_progress(hc->roomlist, FALSE);
+		purple_roomlist_unref(hc->roomlist);
+	}
+	hc->roomlist = purple_roomlist_new(hc->account);
+	fields = g_list_append(fields, purple_roomlist_field_new(PURPLE_ROOMLIST_FIELD_INT, "People", "users", FALSE));
+	fields = g_list_append(fields, purple_roomlist_field_new(PURPLE_ROOMLIST_FIELD_STRING, "About", "about", FALSE));
+	/* joining a row fills Join Chat's "server" with this */
+	fields = g_list_append(fields, purple_roomlist_field_new(PURPLE_ROOMLIST_FIELD_STRING, "Address", "server", FALSE));
+	purple_roomlist_set_fields(hc->roomlist, fields);
+	purple_roomlist_set_in_progress(hc->roomlist, TRUE);
+	hl_tracker_fetch(purple_account_get_string(hc->account, "tracker_url", HL_TRACKER_URL), got_rooms, hc->account);
+	return hc->roomlist;
+}
+
+static void hl_roomlist_cancel(PurpleRoomlist *list)
+{
+	PurpleConnection *gc = purple_account_get_connection(list->account);
+	HlConn *hc = gc ? (HlConn *)gc->proto_data : NULL;
+	purple_roomlist_set_in_progress(list, FALSE);
+	if (hc && hc->roomlist == list) {
+		hc->roomlist = NULL;
+		purple_roomlist_unref(list);
+	}
+}
+
+static void hl_roomlist_expand_category(PurpleRoomlist *list, PurpleRoomlistRoom *category)
+{
+	PurpleConnection *gc = purple_account_get_connection(list->account);
+	HlConn *hc = gc ? (HlConn *)gc->proto_data : NULL;
+	HlServerKind want = same(category->name, QUIET_LABEL) ? HL_SERVER_QUIET : HL_SERVER_HIDDEN;
+	guint i;
+	if (hc && hc->listed)
+		for (i = 0; i < hc->listed->len; i++) {
+			HlServer *s = (HlServer *)g_ptr_array_index(hc->listed, i);
+			if (s->kind == want)
+				add_server_row(list, s, category);
+		}
+	purple_roomlist_set_in_progress(list, FALSE);
+}
+
 /* ------------------------------------------------------------------ plugin */
 
 static PurplePluginProtocolInfo prpl_info = {
@@ -1560,6 +1761,15 @@ static PurplePluginProtocolInfo prpl_info = {
 	.set_buddy_icon = hl_set_buddy_icon,
 	.offline_message = hl_offline_message,
 	.register_user = hl_register_user,
+	.chat_info = hl_chat_info,
+	.chat_info_defaults = hl_chat_info_defaults,
+	.join_chat = hl_join_chat,
+	.get_chat_name = hl_get_chat_name,
+	.chat_leave = hl_chat_leave,
+	.chat_send = hl_chat_send,
+	.roomlist_get_list = hl_roomlist_get_list,
+	.roomlist_cancel = hl_roomlist_cancel,
+	.roomlist_expand_category = hl_roomlist_expand_category,
 #if PURPLE_VERSION_CHECK(2, 5, 0)
 	.struct_size = sizeof(PurplePluginProtocolInfo),
 #endif
@@ -1602,6 +1812,7 @@ static void init_plugin(PurplePlugin *plugin)
 	opts = g_list_append(opts, purple_account_option_int_new("Port", "port", HL_DEFAULT_PORT));
 	opts = g_list_append(opts, purple_account_option_bool_new(
 		"Allow sign-in without protecting the password (old servers)", "allow_legacy", FALSE));
+	opts = g_list_append(opts, purple_account_option_string_new("Server list (tracker)", "tracker_url", HL_TRACKER_URL));
 	prpl_info.protocol_options = opts;
 }
 

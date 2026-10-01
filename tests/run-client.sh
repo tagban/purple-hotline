@@ -13,6 +13,10 @@ fi
 rm -rf "${TMPDIR:-/tmp}/purple-hotline-test"
 "$MOCK" "$PORT" > build/mock.log 2>&1 &
 MOCK_PID=$!
-trap 'kill $MOCK_PID 2>/dev/null' EXIT
+# The tracker's files, served the way tracker.bigredh.com serves them.
+TRACKER_PORT=$((PORT + 10))
+python3 -m http.server "$TRACKER_PORT" --bind 127.0.0.1 --directory tests/fixtures > build/tracker.log 2>&1 &
+TRACKER_PID=$!
+trap 'kill $MOCK_PID $TRACKER_PID 2>/dev/null' EXIT
 sleep 1
-build/test_client "$PWD" "$PORT"
+build/test_client "$PWD" "$PORT" "$TRACKER_PORT"

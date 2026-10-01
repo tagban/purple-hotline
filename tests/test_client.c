@@ -18,6 +18,7 @@
 #include "notify.h"
 #include "plugin.h"
 #include "prefs.h"
+#include "roomlist.h"
 #include "server.h"
 #include "status.h"
 #include "util.h"
@@ -32,6 +33,11 @@ static PurpleAccount *alice, *bob, *dave;
 static char *bob_got, *alice_from_hotbot;
 static int authorized;
 static int errors_shown;
+static char *dave_heard, *alice_heard;
+static int tracker_port;
+static PurpleRoomlist *rlist;
+static int rooms_top, categories, rooms_in_category;
+static PurpleRoomlistRoom *hidden_cat;
 static int readd_ticks;
 
 static void ok(int pass, const char *what)
@@ -119,6 +125,25 @@ static PurpleNotifyUiOps notify_ops = {
 	.notify_message = notify_message
 };
 
+/* ---- the room list: count what's added ---- */
+
+static void rl_add(PurpleRoomlist *list, PurpleRoomlistRoom *room)
+{
+	if (room->type == PURPLE_ROOMLIST_ROOMTYPE_CATEGORY) {
+		categories++;
+		if (strstr(room->name, "Hidden"))
+			hidden_cat = room;
+	} else if (room->parent) {
+		rooms_in_category++;
+	} else {
+		rooms_top++;
+	}
+}
+
+static PurpleRoomlistUiOps roomlist_ops = {
+	.add_room = rl_add
+};
+
 /* ---- signals ---- */
 
 static void received_im(PurpleAccount *account, char *sender, char *message, PurpleConversation *conv,
@@ -135,6 +160,41 @@ static void received_im(PurpleAccount *account, char *sender, char *message, Pur
 		alice_from_hotbot = g_strdup(plain);
 	}
 	g_free(plain);
+}
+
+static void received_chat(PurpleAccount *account, char *sender, char *message, PurpleConversation *conv,
+                          PurpleMessageFlags flags)
+{
+	char *plain = purple_markup_strip_html(message);
+	printf("     %s heard %s in %s: %s\n", purple_account_get_username(account), sender,
+	       purple_conversation_get_name(conv), plain);
+	if (account == dave && strcmp(sender, "alice") == 0) {
+		g_free(dave_heard);
+		dave_heard = g_strdup(plain);
+	}
+	if (account == alice && strcmp(sender, "dave") == 0) {
+		g_free(alice_heard);
+		alice_heard = g_strdup(plain);
+	}
+	g_free(plain);
+}
+
+static PurpleConvChat *room_of(PurpleAccount *a)
+{
+	char *name = g_strdup_printf("127.0.0.1:%d", port);
+	PurpleConversation *c = purple_find_conversation_with_account(PURPLE_CONV_TYPE_CHAT, name, a);
+	g_free(name);
+	return c ? PURPLE_CONV_CHAT(c) : NULL;
+}
+
+static void join_room(PurpleAccount *a)
+{
+	GHashTable *h = g_hash_table_new(g_str_hash, g_str_equal);
+	char *server = g_strdup_printf("127.0.0.1:%d", port);
+	g_hash_table_insert(h, "server", server);
+	serv_join_chat(purple_account_get_connection(a), h);
+	g_hash_table_destroy(h);
+	g_free(server);
 }
 
 static void connection_error(PurpleConnection *gc, PurpleConnectionError err, const gchar *desc)
@@ -271,6 +331,55 @@ static gboolean tick(gpointer data)
 		st = status_of(alice, "bob", NULL);
 		if (st && strcmp(st, "offline") == 0) {
 			ok(1, "bob signs off and alice sees it");
+			join_room(alice);
+			join_room(dave);
+			done = TRUE;
+		}
+		break;
+	case 8: {
+		PurpleConvChat *ra = room_of(alice), *rd = room_of(dave);
+		if (ra && rd && purple_conv_chat_find_user(ra, "dave") && purple_conv_chat_find_user(rd, "alice")) {
+			ok(1, "alice and dave join the server's chat and see each other there");
+			purple_conv_chat_send(ra, "hello <i>room</i>");
+			done = TRUE;
+		}
+		break;
+	}
+	case 9:
+		if (dave_heard) {
+			ok(strcmp(dave_heard, "hello room") == 0, "dave hears alice in the room");
+			purple_conv_chat_send(room_of(dave), "/me waves");
+			done = TRUE;
+		}
+		break;
+	case 10:
+		if (alice_heard) {
+			ok(strstr(alice_heard, "waves") != NULL, "alice sees dave's /me action");
+			if (tracker_port) {
+				char *url = g_strdup_printf("http://127.0.0.1:%d/", tracker_port);
+				purple_account_set_string(alice, "tracker_url", url);
+				g_free(url);
+				rlist = purple_roomlist_get_list(purple_account_get_connection(alice));
+			}
+			done = TRUE;
+		}
+		break;
+	case 11:
+		if (!tracker_port) {
+			g_main_loop_quit(loop);
+			return FALSE;
+		}
+		if (rlist && !purple_roomlist_get_in_progress(rlist) && (rooms_top || categories)) {
+			printf("     room list: %d busy servers, %d sections\n", rooms_top, categories);
+			ok(rooms_top == 15 && categories == 2, "the Room List shows busy servers, with quiet and hidden in sections");
+			if (hidden_cat)
+				purple_roomlist_expand_category(rlist, hidden_cat);
+			done = TRUE;
+		}
+		break;
+	case 12:
+		if (rooms_in_category > 0) {
+			ok(rooms_in_category == 4, "opening Hidden shows the 4 MAJOR MAC BACKUP servers");
 			g_main_loop_quit(loop);
 			return FALSE;
 		}
@@ -298,12 +407,14 @@ int main(int argc, char **argv)
 		return 2;
 	}
 	port = atoi(argv[2]);
+	tracker_port = argc > 3 ? atoi(argv[3]) : 0;
 	home = g_build_filename(g_get_tmp_dir(), "purple-hotline-test", NULL);
 	purple_util_set_user_dir(home);
 	purple_debug_set_enabled(getenv("HL_DEBUG") != NULL);
 	purple_eventloop_set_ui_ops(&loop_ops);
 	purple_accounts_set_ui_ops(&account_ops);
 	purple_notify_set_ui_ops(&notify_ops);
+	purple_roomlist_set_ui_ops(&roomlist_ops);
 	purple_plugins_add_search_path(argv[1]);
 	if (!purple_core_init("hotline-test")) {
 		fprintf(stderr, "libpurple didn't start\n");
@@ -317,6 +428,8 @@ int main(int argc, char **argv)
 
 	purple_signal_connect(purple_conversations_get_handle(), "received-im-msg", &handle,
 	                      PURPLE_CALLBACK(received_im), NULL);
+	purple_signal_connect(purple_conversations_get_handle(), "received-chat-msg", &handle,
+	                      PURPLE_CALLBACK(received_chat), NULL);
 	purple_signal_connect(purple_connections_get_handle(), "connection-error", &handle,
 	                      PURPLE_CALLBACK(connection_error), NULL);
 

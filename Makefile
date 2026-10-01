@@ -16,8 +16,8 @@ else
   SHARED = -shared -fPIC
 endif
 
-SRC = src/hotline.c src/hl_wire.c src/hl_crypto.c
-HDR = src/hl_wire.h src/hl_crypto.h
+SRC = src/hotline.c src/hl_wire.c src/hl_crypto.c src/hl_json.c src/hl_tracker.c src/hl_room.c
+HDR = src/hl_wire.h src/hl_crypto.h src/hl_json.h src/hl_tracker.h src/hl_room.h
 
 all: libhotline.so
 
@@ -28,13 +28,18 @@ build/test_crypto: tests/test_crypto.c src/hl_crypto.c src/hl_crypto.h
 	@mkdir -p build
 	$(CC) -std=c89 -pedantic -Wall -Wextra -Wno-long-long -O2 -o $@ tests/test_crypto.c src/hl_crypto.c
 
+build/test_tracker: tests/test_tracker.c src/hl_tracker.c src/hl_json.c src/hl_tracker.h src/hl_json.h
+	@mkdir -p build
+	$(CC) $(CFLAGS) $(WARN) $(PURPLE_CFLAGS) -o $@ tests/test_tracker.c src/hl_tracker.c src/hl_json.c $(PURPLE_LIBS)
+
 build/test_client: tests/test_client.c libhotline.so
 	@mkdir -p build
 	$(CC) $(CFLAGS) $(WARN) $(PURPLE_CFLAGS) -o $@ tests/test_client.c $(PURPLE_LIBS)
 
 # Crypto vectors, then a full session against HIM's mock server (MOCK=path/to/mock-server).
-check: build/test_crypto build/test_client
+check: build/test_crypto build/test_tracker build/test_client
 	build/test_crypto
+	build/test_tracker tests/fixtures/servers.json tests/fixtures/live.json
 	tests/run-client.sh
 
 install: libhotline.so

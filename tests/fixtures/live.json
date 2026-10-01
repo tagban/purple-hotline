@@ -1,0 +1,387 @@
+{
+ "checked_at": "2026-10-01T14:27:17Z",
+ "servers": {
+  "104.200.25.101:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "130.62.225.57:5500": {
+   "listed": true,
+   "online": false,
+   "users": 0
+  },
+  "135.148.139.199:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "135.148.46.162:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "139.162.249.62:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "15.204.113.251:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "15.204.118.138:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "15.204.118.233:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "15.204.249.60:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "15.204.57.161:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "15.204.92.16:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "15.204.93.91:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "15.204.95.169:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "158.69.63.199:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "173.230.150.122:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "173.230.155.113:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "173.255.212.203:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "173.255.214.98:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "173.255.218.155:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "173.255.246.59:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "192.155.80.74:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "192.155.81.82:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "192.155.82.217:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "192.155.84.58:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "192.81.129.7:5500": {
+   "listed": true,
+   "online": true,
+   "users": 1
+  },
+  "192.81.133.87:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "202.128.66.10:5500": {
+   "listed": true,
+   "online": true,
+   "users": 1
+  },
+  "23.239.3.187:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "23.239.3.217:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "23.239.4.205:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "23.95.32.112:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "24.6.82.54:5500": {
+   "listed": true,
+   "online": true,
+   "users": 3
+  },
+  "40.160.138.140:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "45.33.105.155:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "45.33.33.43:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "45.33.41.92:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "45.33.51.51:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "45.56.82.226:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "45.56.94.175:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "45.79.111.176:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "45.79.115.32:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "45.79.82.77:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "45.79.82.9:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "45.79.93.184:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "50.116.14.184:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "50.65.99.228:1111": {
+   "listed": true,
+   "online": true,
+   "users": 2
+  },
+  "50.65.99.228:7777": {
+   "listed": true,
+   "online": true,
+   "users": 6
+  },
+  "50.65.99.228:8888": {
+   "listed": true,
+   "online": true,
+   "users": 15
+  },
+  "50.65.99.228:9999": {
+   "listed": true,
+   "online": true,
+   "users": 10
+  },
+  "51.222.14.233:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "51.222.29.15:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "51.222.85.183:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "51.81.187.128:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "51.81.187.57:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "51.81.35.250:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "62.116.228.143:5500": {
+   "listed": true,
+   "online": true,
+   "users": 8
+  },
+  "64.99.118.65:5500": {
+   "listed": true,
+   "online": true,
+   "users": 1
+  },
+  "64.99.118.65:5555": {
+   "listed": true,
+   "online": false,
+   "users": 0
+  },
+  "66.209.184.244:5500": {
+   "listed": true,
+   "online": false,
+   "users": 3
+  },
+  "71.172.38.20:5500": {
+   "listed": true,
+   "online": true,
+   "users": 37
+  },
+  "71.230.225.128:5500": {
+   "listed": true,
+   "online": true,
+   "users": 1
+  },
+  "72.211.238.1:5500": {
+   "listed": true,
+   "online": false,
+   "users": 2
+  },
+  "73.163.202.118:5500": {
+   "listed": true,
+   "online": true,
+   "users": 1
+  },
+  "74.207.241.148:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "74.207.243.213:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "74.207.245.110:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "74.208.191.206:5500": {
+   "listed": true,
+   "online": true,
+   "users": 3
+  },
+  "76.169.2.55:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "76.210.4.7:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  },
+  "82.33.17.156:5500": {
+   "listed": true,
+   "online": true,
+   "users": 1
+  },
+  "85.214.130.218:5500": {
+   "listed": true,
+   "online": true,
+   "users": 3
+  },
+  "96.126.101.62:5500": {
+   "listed": true,
+   "online": true,
+   "users": 0
+  }
+ },
+ "trackers": {
+  "hltracker.com": {
+   "error": null,
+   "ok": true,
+   "servers": 69
+  },
+  "hotline.kicks-ass.net": {
+   "error": null,
+   "ok": true,
+   "servers": 70
+  },
+  "saddle.dyndns.org": {
+   "error": null,
+   "ok": true,
+   "servers": 70
+  },
+  "tracker.preterhuman.net": {
+   "error": null,
+   "ok": true,
+   "servers": 68
+  }
+ }
+}

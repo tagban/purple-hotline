@@ -34,7 +34,7 @@ GLIB="$(pkg-config --cflags glib-2.0) -DGLIB_VERSION_MIN_REQUIRED=GLIB_VERSION_2
 COMMON="$ARCH -O2 -g -I$INC -I$INC/libpurple -I../src $GLIB -DPURPLE_STATIC_PRPL -DHAVE_CONFIG_H=0"
 WARN="-Wall -Wno-#pragma-messages -Wno-unused-parameter -Wno-deprecated-declarations -Wno-missing-field-initializers"
 
-for c in ../src/hotline.c ../src/hl_wire.c ../src/hl_crypto.c; do
+for c in ../src/hotline.c ../src/hl_wire.c ../src/hl_crypto.c ../src/hl_json.c ../src/hl_tracker.c ../src/hl_room.c; do
 	cc $COMMON $WARN -c "$c" -o "build/obj/$(basename "$c" .c).o"
 done
 for m in HotlinePlugin.m HotlineService.m HotlineAccount.m HotlineAccountViewController.m; do
