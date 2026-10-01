@@ -2,6 +2,10 @@
  * purple-hotline: SHA-256, SHA-1, HMAC, HKDF and ChaCha20-Poly1305 in portable C.
  * See hl_crypto.h. Copyright (c) 2026 John Leighow. MIT license.
  */
+#ifdef _WIN32
+#define _CRT_RAND_S   /* rand_s: Windows' cryptographic random numbers */
+#include <stdlib.h>
+#endif
 #include "hl_crypto.h"
 
 #include <stdio.h>
@@ -471,6 +475,19 @@ int hl_aead_open(const hl_u8 key[32], const hl_u8 nonce[12], const hl_u8 *in, si
 	return 0;
 }
 
+#ifdef _WIN32
+int hl_random(hl_u8 *out, size_t n)
+{
+	size_t i;
+	for (i = 0; i < n; i++) {
+		unsigned int v;
+		if (rand_s(&v) != 0)
+			return -1;
+		out[i] = (hl_u8)v;
+	}
+	return 0;
+}
+#else
 int hl_random(hl_u8 *out, size_t n)
 {
 	FILE *f = fopen("/dev/urandom", "rb");
@@ -481,3 +498,4 @@ int hl_random(hl_u8 *out, size_t n)
 	fclose(f);
 	return got == n ? 0 : -1;
 }
+#endif

@@ -6,11 +6,13 @@
 #include "hl_wire.h"
 
 #include <errno.h>
+#ifndef _WIN32
+#include <sys/socket.h>
+#include <unistd.h>
+#endif
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
 #include <time.h>
-#include <unistd.h>
 
 #include "conversation.h"
 #include "debug.h"
@@ -18,6 +20,9 @@
 #include "proxy.h"
 #include "server.h"
 #include "util.h"
+#ifdef _WIN32
+#include "win32dep.h"   /* libpurple's Winsock read/write/close/setsockopt (after glib) */
+#endif
 
 /* What a classic session claims to be: a 1.9 client, which every server knows. */
 #define CLASSIC_VERSION 190
@@ -516,7 +521,7 @@ static void connected(gpointer data, gint source, const gchar *error)
 		return;
 	}
 	r->fd = source;
-	setsockopt(source, SOL_SOCKET, SO_KEEPALIVE, &on, sizeof on);
+	setsockopt(source, SOL_SOCKET, SO_KEEPALIVE, (const char *)&on, sizeof on);
 	r->state = R_HANDSHAKE;
 	r->read_h = purple_input_add(source, PURPLE_INPUT_READ, read_cb, r);
 	g_byte_array_append(r->out, (const guint8 *)"TRTPHOTL\0\1\0\0", 12);

@@ -13,11 +13,12 @@
  * Copyright (c) 2026 John Leighow. MIT license (see LICENSE).
  */
 #include <errno.h>
-#include <string.h>
+#ifndef _WIN32
 #include <sys/socket.h>
-#include <sys/types.h>
-#include <time.h>
 #include <unistd.h>
+#endif
+#include <string.h>
+#include <time.h>
 
 #include <glib.h>
 
@@ -46,6 +47,10 @@
 #include "core.h"
 #include "util.h"
 #include "version.h"
+
+#ifdef _WIN32
+#include "win32dep.h"   /* libpurple's Winsock read/write/close/setsockopt (after glib) */
+#endif
 
 #include "hl_crypto.h"
 #include "hl_room.h"
@@ -719,7 +724,7 @@ static void hl_connected(gpointer data, gint source, const gchar *error)
 		return;
 	}
 	hc->fd = source;
-	setsockopt(source, SOL_SOCKET, SO_KEEPALIVE, &on, sizeof on);
+	setsockopt(source, SOL_SOCKET, SO_KEEPALIVE, (const char *)&on, sizeof on);
 	hc->read_h = purple_input_add(source, PURPLE_INPUT_READ, hl_read_cb, hc);
 	/* TRTP handshake (guide §4.3): the sub-protocol is HOTL, version 1. */
 	hl_write_raw(hc, (const guint8 *)"TRTPHOTL\0\1\0\0", 12);
