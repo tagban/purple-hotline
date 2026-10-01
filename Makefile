@@ -8,6 +8,9 @@ WARN = -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -Wno-
 PURPLE_CFLAGS := $(shell $(PKG_CONFIG) --cflags purple)
 PURPLE_LIBS := $(shell $(PKG_CONFIG) --libs purple)
 PLUGIN_DIR := $(shell $(PKG_CONFIG) --variable=plugindir purple)
+# Pidgin's protocol icons (16, 22, 48 px and SVG) go under its data folder.
+DATA_DIR := $(shell $(PKG_CONFIG) --variable=datadir pidgin 2>/dev/null || $(PKG_CONFIG) --variable=datadir purple)
+ICON_DIR := $(DATA_DIR)/pixmaps/pidgin/protocols
 
 UNAME := $(shell uname)
 ifeq ($(UNAME),Darwin)
@@ -45,8 +48,17 @@ check: build/test_crypto build/test_tracker build/test_client
 install: libhotline.so
 	install -d $(DESTDIR)$(PLUGIN_DIR)
 	install -m 644 libhotline.so $(DESTDIR)$(PLUGIN_DIR)/
+	for s in 16 22 48 scalable; do \
+		install -d $(DESTDIR)$(ICON_DIR)/$$s; \
+		install -m 644 pidgin/pixmaps/$$s/hotline.* $(DESTDIR)$(ICON_DIR)/$$s/; \
+	done
+
+# Just for you: the plugin in ~/.purple/plugins (icons still need "make install" or a package).
+install-user: libhotline.so
+	install -d $(HOME)/.purple/plugins
+	install -m 644 libhotline.so $(HOME)/.purple/plugins/
 
 clean:
 	rm -rf libhotline.so build
 
-.PHONY: all check install clean
+.PHONY: all check install install-user clean
