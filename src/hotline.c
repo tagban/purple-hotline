@@ -53,6 +53,8 @@
 #define HL_DEFAULT_SERVER "hotline.vespernet.net"
 #define HL_DEFAULT_PORT 5500
 #define HL_GROUP "Buddies"
+/* Hotline has no sign-up command; VesperNet makes messenger accounts on the web. */
+#define HL_SIGNUP_URL "https://agora.vespernet.net/messenger"
 /* Version (160): the HIM family's number, 1997 (AIM's year). */
 #define HL_CLIENT_VERSION 1997
 #define HL_APP_ID "HIMp"
@@ -1505,6 +1507,30 @@ static void hl_set_buddy_icon(PurpleConnection *gc, PurpleStoredImage *img)
 	hl_send(hc, HL_TX_SET_BUDDY_ICON, &b, simple_reply, (gpointer)"Your Buddy Icon wasn't saved.", NULL);
 }
 
+static gboolean disconnect_later(gpointer data)
+{
+	purple_account_disconnect((PurpleAccount *)data);
+	return FALSE;
+}
+
+/* "Create this new account on the server": there's no such command, so this opens
+ * VesperNet's sign-up page (or explains who makes accounts elsewhere). */
+static void hl_register_user(PurpleAccount *account)
+{
+	const char *server = purple_account_get_string(account, "server", HL_DEFAULT_SERVER);
+	if (strstr(server, "vespernet")) {
+		purple_notify_uri(NULL, HL_SIGNUP_URL);
+		purple_notify_info(NULL, "Hotline", "Get a screen name on VesperNet",
+			"VesperNet's sign-up page is opening in your web browser. Once you have a screen "
+			"name, enter it and its password here and sign on.");
+	} else {
+		purple_notify_info(NULL, "Hotline", "Ask the server's owner for an account",
+			"Hotline servers don't let you sign up from a chat program; the people who run the "
+			"server make accounts. VesperNet (hotline.vespernet.net) has a sign-up page.");
+	}
+	purple_timeout_add(0, disconnect_later, account);
+}
+
 static gboolean hl_offline_message(const PurpleBuddy *buddy)
 {
 	return TRUE;   /* the server holds IMs for buddies who are away (guide §13) */
@@ -1533,6 +1559,7 @@ static PurplePluginProtocolInfo prpl_info = {
 	.normalize = purple_normalize_nocase,
 	.set_buddy_icon = hl_set_buddy_icon,
 	.offline_message = hl_offline_message,
+	.register_user = hl_register_user,
 #if PURPLE_VERSION_CHECK(2, 5, 0)
 	.struct_size = sizeof(PurplePluginProtocolInfo),
 #endif

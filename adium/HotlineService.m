@@ -4,6 +4,7 @@
  */
 #import "HotlineService.h"
 #import "HotlineAccount.h"
+#import "HotlineAccountViewController.h"
 #import <Adium/AIAccountViewController.h>
 #import <Adium/AIStatusControllerProtocol.h>
 #import <Adium/AISharedAdium.h>
@@ -18,7 +19,7 @@
 
 - (AIAccountViewController *)accountViewController
 {
-	return [AIAccountViewController accountViewController];
+	return [HotlineAccountViewController accountViewController];
 }
 
 - (DCJoinChatViewController *)joinChatView
