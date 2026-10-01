@@ -1,4 +1,5 @@
 /* purple-hotline for Adium: Join Group Chat, as a list of Hotline servers. MIT license. */
+#import "HotlineCompat.h"
 #import <Adium/DCJoinChatViewController.h>
 
 @class NSTableView, NSButton, NSTextField;

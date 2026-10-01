@@ -1,4 +1,5 @@
 /* purple-hotline for Adium: the bundle's principal class. MIT license. */
+#import "HotlineCompat.h"
 #import <Adium/AIPlugin.h>
 #import <AdiumLibpurple/AILibpurplePlugin.h>
 

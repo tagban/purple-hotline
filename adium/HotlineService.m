@@ -67,7 +67,7 @@
 
 - (void)registerStatuses
 {
-	id<AIStatusController> sc = adium.statusController;
+	id<AIStatusController> sc = [adium statusController];
 	[sc registerStatus:STATUS_NAME_AVAILABLE
 	   withDescription:[sc localizedDescriptionForCoreStatusName:STATUS_NAME_AVAILABLE]
 	            ofType:AIAvailableStatusType forService:self];

@@ -25,7 +25,7 @@
 /* Busy is its own state on Hotline, not just another away. */
 - (const char *)purpleStatusIDForStatus:(AIStatus *)statusState arguments:(NSMutableDictionary *)arguments
 {
-	if ([statusState.statusName isEqualToString:STATUS_NAME_BUSY])
+	if ([[statusState statusName] isEqualToString:STATUS_NAME_BUSY])
 		return "busy";
 	return [super purpleStatusIDForStatus:statusState arguments:arguments];
 }

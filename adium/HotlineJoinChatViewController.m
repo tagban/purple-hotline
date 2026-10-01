@@ -160,7 +160,7 @@ static void got_servers(GPtrArray *list, const char *error, gpointer data)
 	[super configureForAccount:inAccount];
 	if (!servers && !loading) {
 		loading = YES;
-		[status setStringValue:@"Loading…"];
+		[status setStringValue:[NSString stringWithUTF8String:"Loading\xE2\x80\xA6"]];
 		[self retain];
 		hl_tracker_fetch(NULL, got_servers, self);
 	}

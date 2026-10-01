@@ -11,14 +11,16 @@ extern gboolean purple_init_hotline_plugin(void);
 
 @implementation HotlinePlugin
 
+/* The service is Adium's, so it's registered as soon as the bundle loads; the protocol
+ * is libpurple's, so it waits for libpurple to start (Adium 1.3 loads bundles first). */
 - (void)installPlugin
 {
-	purple_init_hotline_plugin();
 	[HotlineService registerService];
 }
 
 - (void)installLibpurplePlugin
 {
+	purple_init_hotline_plugin();
 }
 
 - (void)loadLibpurplePlugin

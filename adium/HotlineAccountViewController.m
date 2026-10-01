@@ -46,7 +46,7 @@
 		[view addSubview:note];
 
 		button = [[[NSButton alloc] initWithFrame:NSMakeRect(14, lowest - 60, 180, 28)] autorelease];
-		[button setTitle:@"Get a Screen Name\u2026"];
+		[button setTitle:[NSString stringWithUTF8String:"Get a Screen Name\xE2\x80\xA6"]];
 		[button setBezelStyle:NSRoundedBezelStyle];
 		[button setTarget:self];
 		[button setAction:@selector(getScreenName:)];
