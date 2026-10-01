@@ -1,0 +1,88 @@
+name: Build
+on:
+  push:
+  pull_request:
+
+jobs:
+  linux:
+    name: Linux (Pidgin, Finch)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: libpurple and glib
+        run: sudo apt-get update && sudo apt-get install -y libpurple-dev libglib2.0-dev python3
+      - name: HIM's test server (the mock Hotline server)
+        run: |
+          git clone --depth 1 https://github.com/tagban/him.git ../him
+          cd ../him && cargo build -q -p hotline-im --features mock-server --bin mock-server
+      - name: make
+        run: make
+      - name: make check
+        run: make check
+      - uses: actions/upload-artifact@v4
+        with:
+          name: purple-hotline-linux-x86_64
+          path: |
+            libhotline.so
+            pidgin/pixmaps
+
+  windows:
+    name: Windows (Pidgin 2.14, 32-bit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: MinGW-w64
+        run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-i686-win32
+      - name: Pidgin and glib for Windows (cached)
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            pidgin
+            win32-dev
+          key: pidgin-2.14.1-glib-2.28.8
+      - name: Download Pidgin and glib for Windows
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          curl --http1.1 -fL https://sourceforge.net/projects/pidgin/files/Pidgin/2.14.1/pidgin-2.14.1.tar.bz2/download -o pidgin.tar.bz2
+          tar -xf pidgin.tar.bz2 && mv pidgin-2.14.1 pidgin
+          curl --http1.1 -fL https://sourceforge.net/projects/pidgin/files/Pidgin/2.14.1/pidgin-2.14.1-win32-bin.zip/download -o pidgin-win32bin.zip
+          unzip -q pidgin-win32bin.zip
+          cp pidgin-2.14.1-win32bin/libpurple.dll pidgin/libpurple/
+          mkdir -p win32-dev
+          for z in glib/2.28/glib-dev_2.28.8-1_win32.zip dependencies/gettext-runtime-dev_0.18.1.1-2_win32.zip dependencies/zlib-dev_1.2.5-2_win32.zip; do
+            curl --http1.1 -fL "http://ftp.gnome.org/pub/gnome/binaries/win32/$z" -o dep.zip
+            unzip -qo dep.zip -d win32-dev/glib-2.28.8
+          done
+      - name: make
+        run: make -f Makefile.mingw CC=i686-w64-mingw32-gcc
+      - name: package
+        run: |
+          mkdir -p dist/plugins dist/pixmaps/pidgin/protocols
+          cp libhotline.dll dist/plugins/
+          cp -R pidgin/pixmaps/* dist/pixmaps/pidgin/protocols/
+          cp README.md LICENSE dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: purple-hotline-windows
+          path: dist
+
+  release:
+    name: Attach to the release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+      - name: zip
+        run: |
+          (cd purple-hotline-windows && zip -qr ../purple-hotline-windows.zip .)
+          (cd purple-hotline-linux-x86_64 && zip -qr ../purple-hotline-linux-x86_64.zip .)
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: |
+            purple-hotline-windows.zip
+            purple-hotline-linux-x86_64.zip

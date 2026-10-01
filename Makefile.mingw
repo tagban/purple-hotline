@@ -3,19 +3,20 @@
 # Pidgin 2.14 for Windows is a 32-bit program, so this builds 32-bit (i686) with
 # MinGW-w64, either in MSYS2's MINGW32 shell or as a cross compiler elsewhere:
 #
-#   make -f Makefile.mingw PIDGIN_TREE_TOP=../pidgin-2.14.14 WIN32_DEV_TOP=../win32-dev
+#   make -f Makefile.mingw PIDGIN_TREE_TOP=pidgin WIN32_DEV_TOP=win32-dev
 #
-# PIDGIN_TREE_TOP  Pidgin's source (for libpurple's headers and libpurple/win32)
-# WIN32_DEV_TOP    Pidgin's win32-dev bundle (glib's headers and import libraries)
-# PURPLE_DLL_DIR   a folder holding libpurple.dll (an installed Pidgin's, or a build's)
+# PIDGIN_TREE_TOP  Pidgin's source (libpurple's headers, libpurple/win32), with Pidgin's
+#                  own libpurple.dll copied into its libpurple/ folder
+# WIN32_DEV_TOP    holds glib-2.28.8 (GNOME's glib-dev, gettext and zlib zips)
+# (.github/workflows/build.yml fetches all of it.)
 #
 # Install: libhotline.dll into %APPDATA%\.purple\plugins, and the icons under
-# pidgin\pixmaps\ into Pidgin's own pixmaps\pidgin\protocols\ (the installer does both).
+# pidgin\pixmaps\ into Pidgin's own pixmaps\pidgin\protocols\ (the release zip is laid out that way).
 
 CC ?= i686-w64-mingw32-gcc
-PIDGIN_TREE_TOP ?= ../pidgin-2.14.14
-WIN32_DEV_TOP ?= $(PIDGIN_TREE_TOP)/../win32-dev
-GTK_TOP ?= $(WIN32_DEV_TOP)/gtk2-2.24
+PIDGIN_TREE_TOP ?= pidgin
+WIN32_DEV_TOP ?= win32-dev
+GTK_TOP ?= $(WIN32_DEV_TOP)/glib-2.28.8
 PURPLE_DLL_DIR ?= $(PIDGIN_TREE_TOP)/libpurple
 
 CFLAGS ?= -O2 -g
