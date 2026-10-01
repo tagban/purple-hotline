@@ -1500,9 +1500,50 @@ static void im_reply(HlConn *hc, HlTxn *r, gpointer data)
 	}
 }
 
+typedef struct {
+	const char *address;
+	HlRoom *room;
+} RoomFind;
+
+static void room_find(gpointer k, gpointer v, gpointer data)
+{
+	RoomFind *f = (RoomFind *)data;
+	if (!f->room && g_ascii_strcasecmp(hl_room_address((HlRoom *)v), f->address) == 0)
+		f->room = (HlRoom *)v;
+}
+
+/* "name@room address" (someone in a room we're in), split; NULL otherwise. */
+static HlRoom *room_person(HlConn *hc, const char *who, char **name)
+{
+	const char *at = who ? strrchr(who, '@') : NULL;
+	RoomFind f;
+	if (!at || at == who || !hc)
+		return NULL;
+	f.address = at + 1;
+	f.room = NULL;
+	g_hash_table_foreach(hc->rooms, room_find, &f);
+	if (f.room && name)
+		*name = g_strndup(who, (gsize)(at - who));
+	return f.room;
+}
+
 static int hl_send_im(PurpleConnection *gc, const char *who, const char *message, PurpleMessageFlags flags)
 {
 	HlConn *hc = (HlConn *)gc->proto_data;
+	char *in_room_name = NULL;
+	HlRoom *room = room_person(hc, who, &in_room_name);
+	if (room) {
+		/* someone from a room: a Hotline private message, on that room's connection */
+		char *plain = purple_markup_strip_html(message);
+		const char *why = hl_room_send_private(room, in_room_name, plain);
+		g_free(plain);
+		g_free(in_room_name);
+		if (why) {
+			purple_conv_present_error(who, hc->account, why);
+			return -ENOTCONN;
+		}
+		return 1;
+	}
 	char *text = purple_markup_strip_html(message);
 	char *wire;
 	gsize len;
@@ -1538,8 +1579,8 @@ static unsigned int hl_send_typing(PurpleConnection *gc, const char *who, Purple
 {
 	HlConn *hc = (HlConn *)gc->proto_data;
 	HlBuilder b;
-	if (!hc || hc->stage != ST_ONLINE)
-		return 0;
+	if (!hc || hc->stage != ST_ONLINE || room_person(hc, who, NULL))
+		return 0;   /* rooms' private messages have no typing notice */
 	hl_b_init(&b);
 	hl_b_text(hc, &b, HL_F_FRIEND_LOGIN, who);
 	hl_b_u16(&b, HL_F_TYPING_STATE, state == PURPLE_TYPING ? 1 : 0);
@@ -1665,6 +1706,18 @@ static void hl_get_info(PurpleConnection *gc, const char *who)
 {
 	HlConn *hc = (HlConn *)gc->proto_data;
 	HlBuilder b;
+	char *name = NULL;
+	HlRoom *room = room_person(hc, who, &name);
+	if (room) {
+		/* someone in a room has no messenger profile: just who and where */
+		PurpleNotifyUserInfo *info = purple_notify_user_info_new();
+		purple_notify_user_info_add_pair(info, "Name", name);
+		purple_notify_user_info_add_pair(info, "In the room on", hl_room_address(room));
+		purple_notify_userinfo(gc, who, info, NULL, NULL);
+		purple_notify_user_info_destroy(info);
+		g_free(name);
+		return;
+	}
 	hl_b_init(&b);
 	hl_b_text(hc, &b, HL_F_FRIEND_LOGIN, who);
 	hl_send(hc, HL_TX_GET_USER_INFO, &b, info_reply, g_strdup(who), g_free);
@@ -1920,6 +1973,14 @@ static void hl_chat_leave(PurpleConnection *gc, int id)
 		g_hash_table_remove(hc->rooms, GINT_TO_POINTER(id));
 }
 
+/* Someone in a room, as an IM name: "name@room address" (see hl_send_im). */
+static char *hl_get_cb_real_name(PurpleConnection *gc, int id, const char *who)
+{
+	HlConn *hc = (HlConn *)gc->proto_data;
+	HlRoom *room = hc ? (HlRoom *)g_hash_table_lookup(hc->rooms, GINT_TO_POINTER(id)) : NULL;
+	return room ? g_strdup_printf("%s@%s", who, hl_room_address(room)) : NULL;
+}
+
 static int hl_chat_send(PurpleConnection *gc, int id, const char *message, PurpleMessageFlags flags)
 {
 	HlConn *hc = (HlConn *)gc->proto_data;
@@ -2063,6 +2124,7 @@ static PurplePluginProtocolInfo prpl_info = {
 	.get_chat_name = hl_get_chat_name,
 	.chat_leave = hl_chat_leave,
 	.chat_send = hl_chat_send,
+	.get_cb_real_name = hl_get_cb_real_name,
 	.roomlist_get_list = hl_roomlist_get_list,
 	.roomlist_cancel = hl_roomlist_cancel,
 	.roomlist_expand_category = hl_roomlist_expand_category,

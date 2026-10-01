@@ -32,7 +32,7 @@ static int step;
 static PurpleAccount *alice, *bob, *dave;
 
 /* what we've seen */
-static char *bob_got, *alice_from_hotbot;
+static char *bob_got, *alice_from_hotbot, *alice_pm_from, *alice_pm;
 static int authorized;
 static int errors_shown;
 static int suggested_to_dave;
@@ -215,6 +215,12 @@ static void received_im(PurpleAccount *account, char *sender, char *message, Pur
 	if (account == bob && strcmp(sender, "alice") == 0) {
 		g_free(bob_got);
 		bob_got = g_strdup(plain);
+	}
+	if (account == alice && strchr(sender, '@')) {
+		g_free(alice_pm_from);
+		g_free(alice_pm);
+		alice_pm_from = g_strdup(sender);
+		alice_pm = g_strdup(plain);
 	}
 	if (account == alice && strcmp(sender, "hotbot") == 0) {
 		g_free(alice_from_hotbot);
@@ -427,8 +433,23 @@ static gboolean tick(gpointer data)
 		}
 		break;
 	case 10:
-		if (alice_heard) {
+		if (alice_heard && !alice_pm_from) {
+			char *who;
+			PurpleConversation *c = purple_find_chat(purple_account_get_connection(dave),
+			                                         purple_conv_chat_get_id(room_of(dave)));
+			PurplePluginProtocolInfo *pi = PURPLE_PLUGIN_PROTOCOL_INFO(purple_find_prpl("prpl-hotline"));
 			ok(strstr(alice_heard, "waves") != NULL, "alice sees dave's /me action");
+			/* dave double-clicks alice in the room's list: what the UI would IM */
+			who = pi->get_cb_real_name(purple_account_get_connection(dave), purple_conv_chat_get_id(PURPLE_CONV_CHAT(c)), "alice");
+			printf("     dave messages %s privately\n", who);
+			send_im(dave, who, "psst, over here");
+			g_free(who);
+		}
+		if (alice_pm_from) {
+			char *want = g_strdup_printf("dave@127.0.0.1:%d", port);
+			ok(strcmp(alice_pm_from, want) == 0 && strcmp(alice_pm, "psst, over here") == 0,
+			   "a Hotline private message from the room arrives from dave@room, in its own conversation");
+			g_free(want);
 			if (tracker_port) {
 				char *url = g_strdup_printf("http://127.0.0.1:%d/", tracker_port);
 				purple_account_set_string(alice, "tracker_url", url);

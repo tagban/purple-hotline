@@ -23,6 +23,7 @@
 #define CLASSIC_VERSION 190
 
 enum {
+	TX_SEND_PRIVATE = 108,
 	TX_CHAT_SEND = 105,
 	TX_CHAT_MSG = 106,
 	TX_GET_USERS = 300,
@@ -41,6 +42,7 @@ struct _HlRoom {
 	int id;
 	char *host;
 	int port;
+	char *address;   /* as the chat is named */
 	char *nick;
 	PurpleProxyConnectData *connect_data;
 	int fd;
@@ -379,13 +381,18 @@ static void dispatch(HlRoom *r, HlTxn *t)
 		guint32 uid;
 		char *text = field_str(r, t, HL_F_DATA);
 		if (text && hl_txn_uint(t, HL_F_USER_ID, &uid)) {
-			/* a private message to us in this room: shown as a whisper */
-			char *from = field_str(r, t, HL_F_USER_NAME);
+			/* A Hotline private message: its own conversation, named "name@room", so
+			 * replies go back the same way (hl_room_send_private). */
+			const char *shown = (const char *)g_hash_table_lookup(r->users, GUINT_TO_POINTER((guint)uid));
+			char *from = shown ? g_strdup(shown) : field_str(r, t, HL_F_USER_NAME);
+			char *who = g_strdup_printf("%s@%s", from && *from ? from : "?", r->address);
 			char *e = g_markup_escape_text(text, -1);
-			serv_got_chat_in(r->gc, r->id, from && *from ? from : "?", PURPLE_MESSAGE_WHISPER | PURPLE_MESSAGE_RECV,
-			                 e, time(NULL));
+			char *br = purple_strdup_withhtml(e);
+			serv_got_im(r->gc, who, br, PURPLE_MESSAGE_RECV, time(NULL));
 			g_free(from);
+			g_free(who);
 			g_free(e);
+			g_free(br);
 		} else if (text) {
 			say_system(r, text);
 		}
@@ -555,6 +562,7 @@ HlRoom *hl_room_join(PurpleConnection *gc, int id, const char *host, int port, c
 	r->id = id;
 	r->host = g_strdup(host);
 	r->port = port;
+	r->address = port == 5500 ? g_strdup(host) : g_strdup_printf("%s:%d", host, port);
 	r->nick = g_strdup(nick);
 	r->fd = -1;
 	r->in = g_byte_array_new();
@@ -584,6 +592,46 @@ void hl_room_send(HlRoom *r, const char *text)
 	send_txn(r, TX_CHAT_SEND, &b);
 }
 
+const char *hl_room_address(HlRoom *r)
+{
+	return r->address;
+}
+
+typedef struct {
+	const char *name;
+	guint uid;
+	gboolean found;
+} FindUser;
+
+static void find_user(gpointer k, gpointer v, gpointer data)
+{
+	FindUser *f = (FindUser *)data;
+	if (!f->found && g_ascii_strcasecmp((const char *)v, f->name) == 0) {
+		f->uid = GPOINTER_TO_UINT(k);
+		f->found = TRUE;
+	}
+}
+
+const char *hl_room_send_private(HlRoom *r, const char *name, const char *text)
+{
+	FindUser f;
+	HlBuilder b;
+	if (r->state != R_IN)
+		return "You're not in that room any more.";
+	f.name = name;
+	f.uid = 0;
+	f.found = FALSE;
+	g_hash_table_foreach(r->users, find_user, &f);
+	if (!f.found)
+		return "They've left the room.";
+	hl_b_init(&b);
+	hl_b_int(&b, HL_F_USER_ID, f.uid);
+	hl_b_int(&b, HL_F_OPTIONS, 1);   /* a user message */
+	b_text(r, &b, HL_F_DATA, text);
+	send_txn(r, TX_SEND_PRIVATE, &b);
+	return NULL;
+}
+
 void hl_room_leave(HlRoom *r)
 {
 	if (!r)
@@ -596,6 +644,7 @@ void hl_room_leave(HlRoom *r)
 	g_byte_array_free(r->out, TRUE);
 	g_hash_table_destroy(r->users);
 	g_free(r->host);
+	g_free(r->address);
 	g_free(r->nick);
 	g_free(r);
 }
