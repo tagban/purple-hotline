@@ -40,8 +40,10 @@
 #include "prpl.h"
 #include "proxy.h"
 #include "request.h"
+#include <stdlib.h>
 #include "server.h"
 #include "status.h"
+#include "core.h"
 #include "util.h"
 #include "version.h"
 
@@ -1008,6 +1010,169 @@ static void tidy_local_list(HlConn *hc)
 	g_slist_free(buddies);
 }
 
+/* ---- suggested buddies: on VesperNet, John (who made HIM) and SmarterChild, offered
+ * once per account, as HIM offers them. Optional: "Not now" is remembered too. ---- */
+
+typedef struct {
+	const char *login, *name, *about;
+} Suggestion;
+
+static const Suggestion vespernet_suggestions[] = {
+	{ "john", "John", "Made HIM. Say hi!" },
+	{ "smarterchild", "SmarterChild", "A chatbot: weather, news, trivia" },
+	{ NULL, NULL, NULL }
+};
+
+/* The ones this account doesn't have yet. Tests list their own in HOTLINE_TEST_SUGGEST
+ * ("login:Name,login:Name"), for the local test server. */
+static GList *suggestions_for(HlConn *hc)
+{
+	const char *server = purple_account_get_string(hc->account, "server", HL_DEFAULT_SERVER);
+	const char *test = getenv("HOTLINE_TEST_SUGGEST");
+	GList *out = NULL;
+	int i;
+	if (test && *test) {
+		gchar **pairs = g_strsplit(test, ",", -1);
+		for (i = 0; pairs[i]; i++) {
+			gchar **kv = g_strsplit(pairs[i], ":", 2);
+			if (kv[0] && kv[1] && !g_hash_table_lookup(hc->roster, kv[0])) {
+				Suggestion *s = g_new0(Suggestion, 1);
+				s->login = g_strdup(kv[0]);
+				s->name = g_strdup(kv[1]);
+				s->about = g_strdup("A test buddy");
+				out = g_list_append(out, s);
+			}
+			g_strfreev(kv);
+		}
+		g_strfreev(pairs);
+		return out;
+	}
+	if (!strstr(server, "vespernet"))
+		return NULL;
+	for (i = 0; vespernet_suggestions[i].login; i++) {
+		const Suggestion *v = &vespernet_suggestions[i];
+		if (!g_hash_table_lookup(hc->roster, v->login) &&
+		    g_ascii_strcasecmp(v->login, purple_account_get_username(hc->account)) != 0) {
+			Suggestion *s = g_new0(Suggestion, 1);
+			s->login = g_strdup(v->login);
+			s->name = g_strdup(v->name);
+			s->about = g_strdup(v->about);
+			out = g_list_append(out, s);
+		}
+	}
+	return out;
+}
+
+static void suggestion_free(gpointer p)
+{
+	Suggestion *s = (Suggestion *)p;
+	g_free((char *)s->login);
+	g_free((char *)s->name);
+	g_free((char *)s->about);
+	g_free(s);
+}
+
+/* Puts someone on the list and asks them (Add Friend), as Add Buddy would. */
+static void add_by_login(PurpleAccount *account, const char *login)
+{
+	PurpleGroup *grp;
+	PurpleBuddy *b;
+	if (purple_find_buddy(account, login))
+		return;
+	grp = purple_find_group(HL_GROUP);
+	if (!grp) {
+		grp = purple_group_new(HL_GROUP);
+		purple_blist_add_group(grp, NULL);
+	}
+	b = purple_buddy_new(account, login, NULL);
+	purple_blist_add_buddy(b, NULL, grp, NULL);
+	purple_account_add_buddy(account, b);
+}
+
+typedef struct {
+	PurpleAccount *account;
+	GList *logins;
+} HlOffer;
+
+static void offer_done(HlOffer *o, gboolean add)
+{
+	GList *l;
+	purple_account_set_bool(o->account, "suggested", TRUE);   /* asked once, either way */
+	for (l = o->logins; l; l = l->next) {
+		if (add && conn_of(o->account))
+			add_by_login(o->account, (const char *)l->data);
+		g_free(l->data);
+	}
+	g_list_free(o->logins);
+	g_free(o);
+}
+
+static void offer_add(void *data, int action) { offer_done((HlOffer *)data, TRUE); }
+static void offer_not_now(void *data, int action) { offer_done((HlOffer *)data, FALSE); }
+
+/* Where this program keeps Find a Buddy and joining a chat (Adium, Pidgin, Finch). */
+static char *tips(HlConn *hc)
+{
+	const char *ui = purple_core_get_ui();
+	const char *me = purple_account_get_username(hc->account);
+	if (ui && g_ascii_strcasecmp(ui, "Adium") == 0)
+		return g_strdup_printf(
+			"To find other people: File menu > %s > Find a Buddy...\n"
+			"To chat in a Hotline server's chat room: File menu > Join Group Chat... "
+			"(busy servers are listed; tick \"Show quiet and hidden servers\" for the rest).", me);
+	if (ui && strstr(ui, "gtk"))
+		return g_strdup_printf(
+			"To find other people: Accounts menu > %s (Hotline) > Find a Buddy...\n"
+			"To chat in a Hotline server's chat room: Tools menu > Room List, or Buddies menu > Join a Chat...", me);
+	return g_strdup("To find other people, use this account's Find a Buddy action. To chat in a Hotline server's "
+	                "chat room, open the Room List or Join a Chat.");
+}
+
+/* A plain question with real buttons (Adium hides a form's Cancel button). The first
+ * sign-on on VesperNet also says where Find a Buddy and the chat rooms are. */
+static void maybe_suggest(HlConn *hc)
+{
+	GList *list, *l;
+	GString *who;
+	HlOffer *o;
+	char *add_label, *tip;
+	guint n;
+	if (purple_account_get_bool(hc->account, "suggested", FALSE))
+		return;
+	list = suggestions_for(hc);
+	tip = tips(hc);
+	if (!list) {
+		/* no one left to suggest: just the tips, once */
+		purple_account_set_bool(hc->account, "suggested", TRUE);
+		if (strstr(purple_account_get_string(hc->account, "server", HL_DEFAULT_SERVER), "vespernet"))
+			purple_notify_info(hc->gc, "Hotline", "Welcome to Hotline", tip);
+		g_free(tip);
+		return;
+	}
+	o = g_new0(HlOffer, 1);
+	o->account = hc->account;
+	who = g_string_new(NULL);
+	for (l = list; l; l = l->next) {
+		Suggestion *s = (Suggestion *)l->data;
+		g_string_append_printf(who, "%s%s: %s", who->len ? "\n" : "", s->name, s->about);
+		o->logins = g_list_append(o->logins, g_strdup(s->login));
+	}
+	n = g_list_length(list);
+	add_label = n == 1 ? g_strdup_printf("Add %s", ((Suggestion *)list->data)->name)
+	                   : g_strdup(n == 2 ? "Add Both" : "Add Them");
+	for (l = list; l; l = l->next)
+		suggestion_free(l->data);
+	g_list_free(list);
+	g_string_append_printf(who, "\n\n%s", tip);
+	g_free(tip);
+	purple_request_action(hc->gc, "Hotline", n == 1 ? "Add a buddy?" : "Add some buddies?", who->str,
+		0, hc->account, NULL, NULL, o, 2,
+		add_label, G_CALLBACK(offer_add),
+		"Not Now", G_CALLBACK(offer_not_now));
+	g_free(add_label);
+	g_string_free(who, TRUE);
+}
+
 static void roster_reply(HlConn *hc, HlTxn *r, gpointer data)
 {
 	if (r->error != 0) {
@@ -1017,6 +1182,7 @@ static void roster_reply(HlConn *hc, HlTxn *r, gpointer data)
 	g_hash_table_remove_all(hc->roster);
 	roster_entries(hc, r);
 	tidy_local_list(hc);
+	maybe_suggest(hc);
 }
 
 /* ------------------------------------------------------------------ status */
@@ -1551,6 +1717,136 @@ static gboolean hl_offline_message(const PurpleBuddy *buddy)
 	return TRUE;   /* the server holds IMs for buddies who are away (guide §13) */
 }
 
+/* ------------------------------------------------------------------ Find a Buddy */
+
+typedef struct {
+	PurpleAccount *account;
+	char *query;
+} HlFind;
+
+static void find_free(gpointer p)
+{
+	HlFind *f = (HlFind *)p;
+	g_free(f->query);
+	g_free(f);
+}
+
+static void add_from_results(PurpleConnection *gc, GList *row, gpointer data)
+{
+	if (row && row->data)
+		add_by_login(purple_connection_get_account(gc), (const char *)row->data);
+}
+
+/* Results as a list with an Add button; NULL rows mean no one was found. */
+static void show_found(HlConn *hc, GList *rows, const char *query)
+{
+	PurpleNotifySearchResults *res;
+	char *secondary;
+	if (!rows) {
+		char *msg = g_strdup_printf("No one matches \"%s\". (People can choose not to be found by search; "
+		                            "their exact screen name still works.)", query);
+		purple_notify_info(hc->gc, "Find a Buddy", "No one found", msg);
+		g_free(msg);
+		return;
+	}
+	res = purple_notify_searchresults_new();
+	purple_notify_searchresults_column_add(res, purple_notify_searchresults_column_new("Screen name"));
+	purple_notify_searchresults_column_add(res, purple_notify_searchresults_column_new("Name"));
+	for (; rows; rows = rows->next)
+		purple_notify_searchresults_row_add(res, (GList *)rows->data);
+	purple_notify_searchresults_button_add(res, PURPLE_NOTIFY_BUTTON_ADD, add_from_results);
+	secondary = g_strdup_printf("People matching \"%s\". Pick one and click Add to send a buddy request.", query);
+	purple_notify_searchresults(hc->gc, "Find a Buddy", "Hotline buddies found", secondary, res, NULL, NULL);
+	g_free(secondary);
+}
+
+static GList *row(HlConn *hc, const HlField *login, const HlField *name)
+{
+	GList *r = NULL;
+	r = g_list_append(r, hl_field_str(hc, login));
+	r = g_list_append(r, name ? hl_field_str(hc, name) : g_strdup(""));
+	return r;
+}
+
+static void exact_reply(HlConn *hc, HlTxn *r, gpointer data)
+{
+	HlFind *f = (HlFind *)data;
+	const HlField *login = hl_txn_get(r, HL_F_FRIEND_LOGIN);
+	guint32 reason = 0;
+	GList *rows = NULL;
+	hl_txn_uint(r, HL_F_REASON_CODE, &reason);
+	if (r->error == 0 && reason == 0 && login && login->len > 0)
+		rows = g_list_append(NULL, row(hc, login, hl_txn_get(r, HL_F_USER_NAME)));
+	show_found(hc, rows, f->query);
+}
+
+static void search_reply(HlConn *hc, HlTxn *r, gpointer data)
+{
+	HlFind *f = (HlFind *)data;
+	GList *rows = NULL;
+	guint i;
+	if (r->error == 0) {
+		/* entries, each opened by DATA_FRIEND_LOGIN */
+		for (i = 0; i < r->nfields; i++) {
+			if (r->fields[i].id == HL_F_FRIEND_LOGIN) {
+				const HlField *name = (i + 1 < r->nfields && r->fields[i + 1].id == HL_F_USER_NAME) ? &r->fields[i + 1] : NULL;
+				rows = g_list_append(rows, row(hc, &r->fields[i], name));
+			}
+		}
+	}
+	if (!rows && !strchr(f->query, ' ')) {
+		/* nothing by search: perhaps it's an exact screen name of someone not listed */
+		HlBuilder b;
+		HlFind *again = g_new0(HlFind, 1);
+		again->account = f->account;
+		again->query = g_strdup(f->query);
+		hl_b_init(&b);
+		hl_b_text(hc, &b, HL_F_FRIEND_LOGIN, f->query);
+		hl_send(hc, HL_TX_FIND_USER, &b, exact_reply, again, find_free);
+		return;
+	}
+	show_found(hc, rows, f->query);
+}
+
+static void find_ok(PurpleAccount *account, const char *query)
+{
+	HlConn *hc = conn_of(account);
+	HlFind *f;
+	HlBuilder b;
+	char *q;
+	if (!hc || blank(query))
+		return;
+	q = g_strstrip(g_strdup(query));
+	f = g_new0(HlFind, 1);
+	f->account = account;
+	f->query = q;
+	hl_b_init(&b);
+	hl_b_text(hc, &b, HL_F_SEARCH_QUERY, q);
+	hl_send(hc, HL_TX_USER_SEARCH, &b, search_reply, f, find_free);
+}
+
+static void action_find(PurplePluginAction *action)
+{
+	PurpleConnection *gc = (PurpleConnection *)action->context;
+	PurpleAccount *account = purple_connection_get_account(gc);
+	purple_request_input(gc, "Find a Buddy", "Find someone on Hotline",
+		"Type part of their screen name or name.", NULL, FALSE, FALSE, NULL,
+		"Find", G_CALLBACK(find_ok), "Cancel", NULL, account, NULL, NULL, account);
+}
+
+static void action_signup(PurplePluginAction *action)
+{
+	purple_notify_uri(NULL, HL_SIGNUP_URL);
+}
+
+static GList *hl_actions(PurplePlugin *plugin, gpointer context)
+{
+	GList *l = NULL;
+	l = g_list_append(l, purple_plugin_action_new("Find a Buddy\u2026", action_find));
+	l = g_list_append(l, purple_plugin_action_new("Get a VesperNet Screen Name\u2026", action_signup));
+	return l;
+}
+
 /* ------------------------------------------------------------------ chat rooms */
 
 /* Join Chat asks for a server's address (Pidgin's dialog; Adium has its own picker). */
@@ -1797,9 +2093,8 @@ static PurplePluginInfo info = {
 	NULL,
 	NULL,
 	&prpl_info,
-	NULL,
-	NULL,
-	NULL,
+	NULL,              /* prefs_info */
+	hl_actions,
 	NULL,
 	NULL,
 	NULL

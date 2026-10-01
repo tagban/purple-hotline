@@ -4,6 +4,7 @@
  * password "hotline"). Usage: test_client <plugin dir> <port>
  */
 #include <glib.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,6 +19,7 @@
 #include "notify.h"
 #include "plugin.h"
 #include "prefs.h"
+#include "request.h"
 #include "roomlist.h"
 #include "server.h"
 #include "status.h"
@@ -33,6 +35,9 @@ static PurpleAccount *alice, *bob, *dave;
 static char *bob_got, *alice_from_hotbot;
 static int authorized;
 static int errors_shown;
+static int suggested_to_dave;
+static int found_dave;
+static const char *search_for = "da";
 static char *dave_heard, *alice_heard;
 static int tracker_port;
 static PurpleRoomlist *rlist;
@@ -121,8 +126,64 @@ static void *notify_message(PurpleNotifyMsgType type, const char *title, const c
 	return NULL;
 }
 
+static void *notify_searchresults(PurpleConnection *gc, const char *title, const char *primary,
+                                  const char *secondary, PurpleNotifySearchResults *results, gpointer data)
+{
+	GList *r;
+	for (r = results->rows; r; r = r->next) {
+		GList *cols = (GList *)r->data;
+		printf("     found: %s (%s)\n", (char *)cols->data, cols->next ? (char *)cols->next->data : "");
+		if (strcmp((char *)cols->data, "dave") == 0)
+			found_dave = 1;
+	}
+	return NULL;
+}
+
 static PurpleNotifyUiOps notify_ops = {
-	.notify_message = notify_message
+	.notify_message = notify_message,
+	.notify_searchresults = notify_searchresults
+};
+
+/* ---- requests: say yes to suggested buddies; type the search ---- */
+
+static void *request_fields(const char *title, const char *primary, const char *secondary,
+                            PurpleRequestFields *fields, const char *ok_text, GCallback ok_cb,
+                            const char *cancel_text, GCallback cancel_cb, PurpleAccount *account,
+                            const char *who, PurpleConversation *conv, void *user_data)
+{
+	printf("     asked %s: %s\n", purple_account_get_username(account), primary);
+	if (account == dave && purple_request_fields_get_field(fields, "carol"))
+		suggested_to_dave = 1;
+	((PurpleRequestFieldsCb)ok_cb)(user_data, fields);
+	return NULL;
+}
+
+static void *request_input(const char *title, const char *primary, const char *secondary,
+                           const char *default_value, gboolean multiline, gboolean masked, gchar *hint,
+                           const char *ok_text, GCallback ok_cb, const char *cancel_text, GCallback cancel_cb,
+                           PurpleAccount *account, const char *who, PurpleConversation *conv, void *user_data)
+{
+	((PurpleRequestInputCb)ok_cb)(user_data, search_for);
+	return NULL;
+}
+
+static void *request_action(const char *title, const char *primary, const char *secondary, int default_action,
+                            PurpleAccount *account, const char *who, PurpleConversation *conv, void *user_data,
+                            size_t action_count, va_list actions)
+{
+	const char *label = va_arg(actions, const char *);
+	GCallback cb = va_arg(actions, GCallback);
+	printf("     asked %s: %s [%s]\n", purple_account_get_username(account), primary, label);
+	if (account == dave && secondary && strstr(secondary, "Carol") && strstr(secondary, "Find a Buddy"))
+		suggested_to_dave = 1;
+	((PurpleRequestActionCb)cb)(user_data, 0);   /* the first button: Add */
+	return NULL;
+}
+
+static PurpleRequestUiOps request_ops = {
+	.request_input = request_input,
+	.request_fields = request_fields,
+	.request_action = request_action
 };
 
 /* ---- the room list: count what's added ---- */
@@ -321,15 +382,28 @@ static gboolean tick(gpointer data)
 		break;
 	case 6:
 		st = status_of(dave, "alice", NULL);
-		if (authorized && st && strcmp(st, "available") == 0) {
+		if (authorized && st && strcmp(st, "available") == 0 && purple_find_buddy(dave, "carol")) {
+			PurplePlugin *prpl = purple_find_prpl("prpl-hotline");
+			PurpleConnection *gc = purple_account_get_connection(alice);
+			GList *acts = PURPLE_PLUGIN_ACTIONS(prpl, gc), *l;
 			ok(1, "alice is asked, accepts, and dave sees her available");
+			ok(suggested_to_dave, "dave is offered a suggested buddy (carol), with where Find a Buddy and chat rooms are, and adds her");
+			for (l = acts; l; l = l->next) {
+				PurplePluginAction *a = (PurplePluginAction *)l->data;
+				if (a && g_str_has_prefix(a->label, "Find")) {
+					a->plugin = prpl;
+					a->context = gc;
+					a->callback(a);   /* Find a Buddy: "da" */
+				}
+			}
 			purple_account_set_enabled(bob, purple_core_get_ui(), FALSE);
 			done = TRUE;
 		}
 		break;
 	case 7:
 		st = status_of(alice, "bob", NULL);
-		if (st && strcmp(st, "offline") == 0) {
+		if (st && strcmp(st, "offline") == 0 && found_dave) {
+			ok(1, "Find a Buddy: alice searches \"da\" and finds dave");
 			ok(1, "bob signs off and alice sees it");
 			join_room(alice);
 			join_room(dave);
@@ -415,6 +489,8 @@ int main(int argc, char **argv)
 	purple_accounts_set_ui_ops(&account_ops);
 	purple_notify_set_ui_ops(&notify_ops);
 	purple_roomlist_set_ui_ops(&roomlist_ops);
+	purple_request_set_ui_ops(&request_ops);
+	g_setenv("HOTLINE_TEST_SUGGEST", "carol:Carol", TRUE);
 	purple_plugins_add_search_path(argv[1]);
 	if (!purple_core_init("hotline-test")) {
 		fprintf(stderr, "libpurple didn't start\n");
