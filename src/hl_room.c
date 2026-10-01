@@ -26,6 +26,8 @@
 
 /* What a classic session claims to be: a 1.9 client, which every server knows. */
 #define CLASSIC_VERSION 190
+/* The classic icon people from Adium and Pidgin wear in rooms: 2537, Daffy Duck. */
+#define ROOM_ICON 2537
 
 enum {
 	TX_SEND_PRIVATE = 108,
@@ -376,7 +378,7 @@ static void dispatch(HlRoom *r, HlTxn *t)
 		HlBuilder b;
 		hl_b_init(&b);
 		b_text(r, &b, HL_F_USER_NAME, r->nick);
-		hl_b_int(&b, HL_F_USER_ICON_ID, 0);
+		hl_b_int(&b, HL_F_USER_ICON_ID, ROOM_ICON);
 		hl_b_int(&b, HL_F_OPTIONS, 0);
 		send_txn(r, HL_TX_AGREED, &b);
 		ask_for_users(r);   /* some servers list people only after this */
@@ -439,12 +441,12 @@ static void read_cb(gpointer data, gint source, PurpleInputCondition cond)
 			return;
 		}
 		g_byte_array_remove_range(r->in, 0, 8);
-		/* A guest: empty login and password, our name, no icon (rooms show names only). */
+		/* A guest: empty login and password, our name, Daffy's icon. */
 		hl_b_init(&b);
 		hl_b_bytes(&b, HL_F_USER_LOGIN, NULL, 0);
 		hl_b_bytes(&b, HL_F_USER_PASSWORD, NULL, 0);
 		hl_b_str(&b, HL_F_USER_NAME, r->nick);
-		hl_b_int(&b, HL_F_USER_ICON_ID, 0);
+		hl_b_int(&b, HL_F_USER_ICON_ID, ROOM_ICON);
 		hl_b_int(&b, HL_F_VERSION, CLASSIC_VERSION);
 		hl_b_u16(&b, HL_F_CAPABILITIES, HL_CAP_TEXT_ENCODING);
 		r->state = R_LOGIN;

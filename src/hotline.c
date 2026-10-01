@@ -59,7 +59,7 @@
 #include "roomlist.h"
 
 #define HL_PRPL_ID "prpl-hotline"
-#define HL_VERSION "0.1.0"
+#define HL_VERSION "0.1.1"
 #define HL_DEFAULT_SERVER "hotline.vespernet.net"
 #define HL_DEFAULT_PORT 5500
 #define HL_GROUP "Buddies"
