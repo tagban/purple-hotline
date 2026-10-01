@@ -26,7 +26,7 @@ fail() { echo "FAILED: $1"; echo; echo "(build.log has the details)"; exit 1; }
 [ -d "$FW/libpurple.framework" ] || fail "no Adium at $ADIUM_APP: install Adium 1.3.10 there, or set ADIUM_APP"
 
 rm -rf build && mkdir -p build/obj "$OUT/Contents/MacOS" "$OUT/Contents/Resources"
-COMMON="$ARCHS -isysroot $SDK -mmacosx-version-min=10.4 -O2 -g -Iheaders -Iheaders/libpurple -Iheaders/glib -Isrc -DPURPLE_STATIC_PRPL"
+COMMON="$ARCHS -isysroot $SDK -mmacosx-version-min=10.4 -O2 -g -Iheaders -Iheaders/libpurple -Iheaders/glib -Isrc -DPURPLE_STATIC_PRPL -DHL_ADIUM_13"
 
 for c in src/hotline.c src/hl_wire.c src/hl_crypto.c src/hl_json.c src/hl_tracker.c src/hl_room.c; do
 	echo "== $c"
