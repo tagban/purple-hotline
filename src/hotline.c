@@ -906,6 +906,7 @@ static void roster_entry(HlConn *hc, const HlTxn *t, guint from, guint to)
 	}
 	if (blank(login))
 		goto done;
+	DBG("roster: %s state %u presence %u\n", login, state, presence);
 	g_hash_table_insert(hc->roster, g_strdup(login), GINT_TO_POINTER(state));
 
 	switch (state) {
@@ -956,15 +957,45 @@ static void roster_entries(HlConn *hc, const HlTxn *t)
 		roster_entry(hc, t, start, t->nfields);
 }
 
-/* Buddies kept on this computer that the server no longer lists go away. */
+static gboolean in_our_group(PurpleBuddy *b)
+{
+	PurpleGroup *g = purple_buddy_get_group(b);
+	return g && same(purple_group_get_name(g), HL_GROUP);
+}
+
+/* Buddies kept on this computer that the server no longer lists go away, and so do
+ * second copies of one buddy (adding someone already on the list makes one): the copy
+ * in a group you chose stays, rather than the one this plugin filed under Buddies. */
 static void tidy_local_list(HlConn *hc)
 {
 	GSList *buddies = purple_find_buddies(hc->account, NULL), *l;
+	GHashTable *kept = g_hash_table_new(g_str_hash, g_str_equal);
+	GSList *drop = NULL;
+
 	for (l = buddies; l; l = l->next) {
 		PurpleBuddy *b = (PurpleBuddy *)l->data;
-		if (!g_hash_table_lookup(hc->roster, purple_buddy_get_name(b)))
-			purple_blist_remove_buddy(b);
+		const char *name = purple_buddy_get_name(b);
+		PurpleBuddy *other;
+		if (!g_hash_table_lookup(hc->roster, name)) {
+			drop = g_slist_prepend(drop, b);
+			continue;
+		}
+		other = (PurpleBuddy *)g_hash_table_lookup(kept, name);
+		if (!other) {
+			g_hash_table_insert(kept, (gpointer)name, b);
+		} else if (in_our_group(other) && !in_our_group(b)) {
+			drop = g_slist_prepend(drop, other);
+			g_hash_table_insert(kept, (gpointer)name, b);
+		} else {
+			drop = g_slist_prepend(drop, b);
+		}
 	}
+	for (l = drop; l; l = l->next) {
+		DBG("dropping %s from the local list\n", purple_buddy_get_name((PurpleBuddy *)l->data));
+		purple_blist_remove_buddy((PurpleBuddy *)l->data);
+	}
+	g_slist_free(drop);
+	g_hash_table_destroy(kept);
 	g_slist_free(buddies);
 }
 
@@ -1349,15 +1380,33 @@ static void simple_reply(HlConn *hc, HlTxn *r, gpointer data)
 	}
 }
 
+static void roster_reply(HlConn *hc, HlTxn *r, gpointer data);
+
+/* After an add, the server's list says where things stand (already buddies, waiting, ...). */
+static void add_reply(HlConn *hc, HlTxn *r, gpointer data)
+{
+	guint32 reason = 0;
+	HlBuilder b;
+	hl_txn_uint(r, HL_F_REASON_CODE, &reason);
+	if (r->error != 0 && reason != 4 && reason != 5) {   /* "already buddies" and "already asked" are fine */
+		char *why = reply_error(hc, r);
+		purple_notify_error(hc->gc, "Hotline", "Your buddy request didn't go.", why);
+		g_free(why);
+	}
+	hl_b_init(&b);
+	hl_send(hc, HL_TX_GET_ROSTER, &b, roster_reply, NULL, NULL);
+}
+
 static void hl_add_buddy(PurpleConnection *gc, PurpleBuddy *buddy, PurpleGroup *group)
 {
 	HlConn *hc = (HlConn *)gc->proto_data;
 	HlBuilder b;
+	if (!hc || hc->stage != ST_ONLINE)
+		return;
+	DBG("adding %s\n", purple_buddy_get_name(buddy));
 	hl_b_init(&b);
 	hl_b_text(hc, &b, HL_F_FRIEND_LOGIN, purple_buddy_get_name(buddy));
-	hl_send(hc, HL_TX_ADD_FRIEND, &b, simple_reply, (gpointer)"Your buddy request didn't go.", NULL);
-	purple_prpl_got_user_status(hc->account, purple_buddy_get_name(buddy), "offline",
-	                            "message", "Waiting for them to accept your buddy request", NULL);
+	hl_send(hc, HL_TX_ADD_FRIEND, &b, add_reply, NULL, NULL);
 }
 
 static void hl_remove_buddy(PurpleConnection *gc, PurpleBuddy *buddy, PurpleGroup *group)

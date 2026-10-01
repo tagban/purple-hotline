@@ -15,6 +15,7 @@
 #include "core.h"
 #include "debug.h"
 #include "eventloop.h"
+#include "notify.h"
 #include "plugin.h"
 #include "prefs.h"
 #include "server.h"
@@ -30,6 +31,8 @@ static PurpleAccount *alice, *bob, *dave;
 /* what we've seen */
 static char *bob_got, *alice_from_hotbot;
 static int authorized;
+static int errors_shown;
+static int readd_ticks;
 
 static void ok(int pass, const char *what)
 {
@@ -99,6 +102,21 @@ static void *request_authorize(PurpleAccount *account, const char *remote_user, 
 
 static PurpleAccountUiOps account_ops = {
 	.request_authorize = request_authorize
+};
+
+/* ---- error dialogs: count them ---- */
+
+static void *notify_message(PurpleNotifyMsgType type, const char *title, const char *primary,
+                            const char *secondary)
+{
+	printf("     dialog: %s %s\n", primary ? primary : "", secondary ? secondary : "");
+	if (type == PURPLE_NOTIFY_MSG_ERROR)
+		errors_shown++;
+	return NULL;
+}
+
+static PurpleNotifyUiOps notify_ops = {
+	.notify_message = notify_message
 };
 
 /* ---- signals ---- */
@@ -201,11 +219,29 @@ static gboolean tick(gpointer data)
 	case 3:
 		st = status_of(alice, "bob", &msg);
 		if (st && strcmp(st, "away") == 0 && msg && strcmp(msg, "out to lunch") == 0) {
+			PurpleBuddy *again = purple_buddy_new(alice, "bob", NULL);
 			ok(1, "alice sees bob away: \"out to lunch\"");
-			send_im(alice, "hotbot", "ping");
+			/* adding someone who's already a buddy (as Adium lets you) */
+			purple_blist_add_buddy(again, NULL, purple_group_new("Contacts"), NULL);
+			purple_account_add_buddy(alice, again);
 			done = TRUE;
 		}
 		break;
+	case 30:
+		if (++readd_ticks >= 15) {
+			st = status_of(alice, "bob", &msg);
+			GSList *bobs = purple_find_buddies(alice, "bob");
+			ok(errors_shown == 0 && st && strcmp(st, "away") == 0,
+			   "adding bob again shows no error and keeps him away (not offline)");
+			ok(g_slist_length(bobs) == 1 &&
+			   strcmp(purple_group_get_name(purple_buddy_get_group(bobs->data)), "Contacts") == 0,
+			   "and bob is listed once, in the group alice picked");
+			g_slist_free(bobs);
+			send_im(alice, "hotbot", "ping");
+			step = 4;
+			waited = 0;
+		}
+		return TRUE;
 	case 4:
 		if (alice_from_hotbot) {
 			ok(strstr(alice_from_hotbot, "ping") != NULL, "HotBot answers alice");
@@ -240,6 +276,11 @@ static gboolean tick(gpointer data)
 		}
 		break;
 	}
+	if (done && step == 3) {
+		step = 30;
+		waited = 0;
+		return TRUE;
+	}
 	if (done) {
 		step++;
 		waited = 0;
@@ -262,6 +303,7 @@ int main(int argc, char **argv)
 	purple_debug_set_enabled(getenv("HL_DEBUG") != NULL);
 	purple_eventloop_set_ui_ops(&loop_ops);
 	purple_accounts_set_ui_ops(&account_ops);
+	purple_notify_set_ui_ops(&notify_ops);
 	purple_plugins_add_search_path(argv[1]);
 	if (!purple_core_init("hotline-test")) {
 		fprintf(stderr, "libpurple didn't start\n");
