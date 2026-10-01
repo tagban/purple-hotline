@@ -1,0 +1,5 @@
+libhotline.so
+build/
+*.dSYM/
+adium/build/
+.DS_Store
