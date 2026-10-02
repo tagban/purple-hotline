@@ -1025,6 +1025,7 @@ typedef struct {
 static const Suggestion vespernet_suggestions[] = {
 	{ "john", "John", "Made HIM. Say hi!" },
 	{ "smarterchild", "SmarterChild", "A chatbot: weather, news, trivia" },
+	{ "bugbot", "BugBot", "Tell it about bugs and ideas for HIM and this plugin" },
 	{ NULL, NULL, NULL }
 };
 
